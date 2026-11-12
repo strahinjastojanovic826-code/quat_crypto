@@ -12,6 +12,29 @@
 * **Idiomatic Rust APIs:** Full support for `TryFrom`, `From`, `Iterator`, `ExactSizeIterator`, `FusedIterator`, `FromIterator`, and `Extend`.
 * **Built-in Stream Cipher:** Perform quaternary modular arithmetic encryption and decryption out of the box (`QuatStreamCipher`).
 * **Declarative Macro:** Clean syntax initialization using the custom `quat_vec!` macro.
+* **Arithmetic & Logical Operators:** Full `std::ops` support (`+`, `-`, `&`, `|`, `^`, `!`) for `Quat` operating directly in $\mathbb{Z}_4$ modular arithmetic.
+* **Substitution Cipher (S-Box):** Quaternary substitution cipher (`QuatSubstitutionCipher`) with custom permutation tables for enhanced cryptographic transformations.
+* **Raw Bytes Interoperability:** Direct conversion from standard raw bytes (`&[u8]`) into `QuatBuffer` via `TryFrom` implementation.
+
+---
+
+## Benchmark
+
+| Test Name | Tested Component / Feature | Iterations / Scale | Execution Time | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **`test_01_quat_basic_values`** | Basic values & u8 conversion | 100,000 iterations | 2.0000 ms[cite: 19] | Passed[cite: 19] |
+| **`test_02_quat_try_from_invalid`** | Validation of invalid values (`TryFrom`) | 100,000 iterations | 2.7028 ms[cite: 19] | Passed[cite: 19] |
+| **`test_03_buffer_push_and_get`** | Basic buffer push and get operations | 10,000 iterations | 2.6369 ms[cite: 19] | Passed[cite: 19] |
+| **`test_04_buffer_memory_packing`** | Memory saving / bit-packing (4 quats per byte) | 10,000 iterations | 2.6568 ms[cite: 19] | Passed[cite: 19] |
+| **`test_05_quat_vec_macro`** | Custom `quat_vec!` macro evaluation | 10,000 iterations | 3.2729 ms[cite: 19] | Passed[cite: 19] |
+| **`test_06_buffer_iteration`** | Buffer iteration (owned & borrowed) | 10,000 iterations | 6.6639 ms[cite: 19] | Passed[cite: 19] |
+| **`test_07_buffer_slicing`** | Zero-copy slicing over buffer | 10,000 iterations | 3.4257 ms[cite: 19] | Passed[cite: 19] |
+| **`test_08_cipher_encrypt_decrypt`** | Stream cipher encryption & decryption symmetry | 5,000 iterations | 7.0849 ms[cite: 19] | Passed[cite: 19] |
+| **`test_09_error_edge_cases`** | Error handling (bounds, empty key, range) | 10,000 iterations | 1.9618 ms[cite: 19] | Passed[cite: 19] |
+| **`test_10_stress_test_large_buffer`** | Large buffer stress test (10,000 quats + crypto) | 1 run (10,000 quats) | 2.8394 ms[cite: 19] | Passed[cite: 19] |
+| **`test_11_quat_arithmetic_and_logic`** | Arithmetic (`+`, `-`) and logic (`&`, ``, `^`, `!`) | Standard unit test | N/A | Passed[cite: 19] |
+| **`test_12_substitution_cipher`** | Quat Substitution Cipher (S-Box) | 10,000 iterations | 4.0351 ms[cite: 19] | Passed[cite: 19] |
+| **`test_13_raw_bytes_conversion`** | `QuatBuffer TryFrom<&[u8]>` raw byte parsing | 5,000 iterations (400 quats each) | 76.7261 ms[cite: 19] | Passed[cite: 19] |
 
 ---
 
@@ -32,7 +55,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-quat_crypto = "0.3.0"
+quat_crypto = "0.4.0"
 ```
 
 ---
@@ -100,6 +123,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = cipher.decrypt(&ciphertext)?;
 
     assert_eq!(plaintext.get(0), decrypted.get(0));
+    Ok(())
+}
+```
+
+### 4. Arithmetic & Logical Operators
+Perform direct modular arithmetic ($\pmod 4$) and bitwise logic on quats:
+
+```rust
+use quat_crypto::Quat;
+
+fn main() {
+    // Addition mod 4 (1 + 2 = 3)
+    let sum = Quat::V01 + Quat::V10;
+    assert_eq!(sum, Quat::V11);
+
+    // Subtraction mod 4 (3 - 1 = 2)
+    let diff = Quat::V11 - Quat::V01;
+    assert_eq!(diff, Quat::V10);
+
+    // Bitwise NOT
+    let inverted = !Quat::V01;
+    assert_eq!(inverted, Quat::V10);
+}
+```
+
+### 5. Substitution Cipher & Raw Bytes Conversion
+
+```rust
+use quat_crypto::{Quat, QuatBuffer, QuatSubstitutionCipher, quat_vec};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // S-Box substitution
+    let sbox = QuatSubstitutionCipher::new([Quat::V11, Quat::V00, Quat::V01, Quat::V10]);
+    let input = quat_vec![Quat::V00, Quat::V01];
+    let substituted = sbox.substitute(&input)?;
+
+    // Converting raw standard bytes (&[u8]) into QuatBuffer
+    let raw_bytes: &[u8] = &[0b11100100]; // Packs multiple quats
+    let buffer = QuatBuffer::try_from(raw_bytes)?;
+    
     Ok(())
 }
 ```

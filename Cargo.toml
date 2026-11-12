@@ -1,11 +1,11 @@
 [package]
 name = "quat_crypto"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 authors = ["Strale <strahinjastojanovic826@gmail.com>"]
 description = "A high-performance, memory-efficient Rust library for packing 2-bit quaternary values (quats) into standard bytes, achieving 75% memory savings, with built-in stream cipher capabilities."
 readme = "README.md"
-repository = "https://github.com/yourusername/quat_crypto"
+repository = "https://github.com/strahinjastojanovic826-code/quat_crypto"
 license = "AGPL-3.0-only"
 keywords = ["crypto", "quaternary", "bitpacking", "memory-efficient", "buffer"]
 categories = ["cryptography", "data-structures", "algorithms"]

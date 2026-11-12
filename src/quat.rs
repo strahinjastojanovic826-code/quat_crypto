@@ -1,6 +1,7 @@
 use crate::error::QuatError;
 use std::convert::TryFrom;
 use std::fmt;
+use std::ops::{Add, Sub, BitAnd, BitOr, BitXor, Not};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Quat {
@@ -43,5 +44,59 @@ impl fmt::Display for Quat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let val: u8 = (*self).into();
         write!(f, "{:02b}", val)
+    }
+}
+
+impl Add for Quat {
+    type Output = Self;
+    #[inline(always)]
+    fn add(self, rhs: Self) -> Self::Output {
+        let val = (self as u8 + rhs as u8) % 4;
+        val.try_into().unwrap()
+    }
+}
+
+impl Sub for Quat {
+    type Output = Self;
+    #[inline(always)]
+    fn sub(self, rhs: Self) -> Self::Output {
+        let val = (4 + self as u8 - rhs as u8) % 4;
+        val.try_into().unwrap()
+    }
+}
+
+impl BitAnd for Quat {
+    type Output = Self;
+    #[inline(always)]
+    fn bitand(self, rhs: Self) -> Self::Output {
+        let val = (self as u8) & (rhs as u8);
+        val.try_into().unwrap()
+    }
+}
+
+impl BitOr for Quat {
+    type Output = Self;
+    #[inline(always)]
+    fn bitor(self, rhs: Self) -> Self::Output {
+        let val = (self as u8) | (rhs as u8);
+        val.try_into().unwrap()
+    }
+}
+
+impl BitXor for Quat {
+    type Output = Self;
+    #[inline(always)]
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        let val = (self as u8) ^ (rhs as u8);
+        val.try_into().unwrap()
+    }
+}
+
+impl Not for Quat {
+    type Output = Self;
+    #[inline(always)]
+    fn not(self) -> Self::Output {
+        let val = !(self as u8) & 0b11;
+        val.try_into().unwrap()
     }
 }

@@ -3,6 +3,7 @@ use crate::error::QuatError;
 use crate::slice::QuatSlice;
 use std::convert::TryInto;
 
+#[derive(Clone)]
 pub struct QuatBuffer {
     bytes: Vec<u8>,
     len: usize,
@@ -145,5 +146,23 @@ impl<'a> IntoIterator for &'a QuatBuffer {
 
     fn into_iter(self) -> Self::IntoIter {
         self.as_slice().iter()
+    }
+}
+
+impl TryFrom<&[u8]> for QuatBuffer {
+    type Error = QuatError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let mut buffer = QuatBuffer::with_capacity(bytes.len() * 4);
+        for &b in bytes {
+            // Extract 4 quats from high to low bits (Big-Endian)
+            for i in 0..4 {
+                let shift = (3 - i) * 2;
+                let val = (b >> shift) & 0b11;
+                let quat = Quat::try_from(val)?;
+                buffer.push(quat);
+            }
+        }
+        Ok(buffer)
     }
 }
