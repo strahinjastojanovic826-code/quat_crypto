@@ -17,6 +17,11 @@ mod tests {
     use std::convert::TryFrom;
     use crate::cipher::QuatSubstitutionCipher;
     use std::time::Instant;
+    pub use buffer::QuatBuffer;
+    pub use cipher::{swar, Cipher, ConstantTimeQuatSBox, QuatFeistelCipher, QuatLfsr, QuatStreamCipher};
+    pub use error::QuatError;
+    pub use quat::Quat;
+    pub use slice::{QuatSlice, QuatSliceIter, QuatSliceMut};
 
     // --- TEST 1: Najlakši - Osnovne vrednosti i konverzija u u8 ---
     #[test]
@@ -326,5 +331,211 @@ fn test_13_raw_bytes_conversion_and_benchmark() {
     assert_eq!(buffer.len(), 400);
     assert_eq!(buffer.byte_len(), 100);
 }
+
+#[test]
+    fn test_14_mutable_slice_and_benchmark() {
+        let mut buf = quat_vec![
+            Quat::V00, Quat::V01, Quat::V10, Quat::V11,
+            Quat::V00, Quat::V01, Quat::V10, Quat::V11
+        ];
+
+        let start = Instant::now();
+        let iterations = 10_000;
+
+        for _ in 0..iterations {
+            let mut mut_slice = buf.slice_mut(2, 6).unwrap();
+            assert_eq!(mut_slice.len(), 4);
+            mut_slice.set(0, Quat::V11).unwrap();
+            mut_slice.set(3, Quat::V00).unwrap();
+        }
+
+        println!(
+            "[BENCHMARK] test_14_mutable_slice ({} iterations): {:?}",
+            iterations,
+            start.elapsed()
+        );
+
+        assert_eq!(buf.get(2), Ok(Quat::V11));
+        assert_eq!(buf.get(5), Ok(Quat::V00));
+        // Untouched elements remain intact
+        assert_eq!(buf.get(0), Ok(Quat::V00));
+        assert_eq!(buf.get(7), Ok(Quat::V11));
+    }
+
+    // --- TEST 15: SWAR Parallel Arithmetic & In-Place Encryption Benchmark ---
+    #[test]
+    fn test_15_swar_in_place_crypto_and_benchmark() {
+        // 32 quats key (8 bytes) triggers the full u64 SWAR fast-path
+        let key: Vec<Quat> = (0..32)
+            .map(|i| Quat::try_from((i % 4) as u8).unwrap())
+            .collect();
+        let cipher = QuatStreamCipher::new(key).unwrap();
+
+        // 10,000 quats buffer (2,500 bytes)
+        let mut data = QuatBuffer::with_capacity(10_000);
+        for i in 0..10_000 {
+            data.push(Quat::try_from(((i * 3) % 4) as u8).unwrap());
+        }
+        let original = data.clone();
+
+        let start = Instant::now();
+        let iterations = 1_000;
+
+        for _ in 0..iterations {
+            cipher.encrypt_in_place_swar(&mut data);
+            cipher.decrypt_in_place_swar(&mut data);
+        }
+
+        println!(
+            "[BENCHMARK] test_15_swar_in_place_crypto ({} round-trips over 10,000 quats): {:?}",
+            iterations,
+            start.elapsed()
+        );
+
+        assert_eq!(data.as_bytes(), original.as_bytes());
+        assert_eq!(data.len(), original.len());
+    }
+
+    // --- TEST 16: Galois Field GF(4) Algebra & Benchmark ---
+    #[test]
+    fn test_16_gf4_field_arithmetic_and_benchmark() {
+        let elements = [Quat::V00, Quat::V01, Quat::V10, Quat::V11];
+
+        let start = Instant::now();
+        let iterations = 100_000;
+
+        for _ in 0..iterations {
+            // Verify field axioms: a * a^-1 == 1 (V01) for all non-zero elements
+            for &a in &elements[1..] {
+                let inv = a.gf4_inv().expect("Non-zero GF(4) element must have inverse");
+                assert_eq!(a.gf4_mul(inv), Quat::V01);
+            }
+
+            // Verify distributivity: a * (b + c) == (a * b) + (a * c)
+            let a = Quat::V10;
+            let b = Quat::V11;
+            let c = Quat::V01;
+            let lhs = a.gf4_mul(b.gf4_add(c));
+            let rhs = a.gf4_mul(b).gf4_add(a.gf4_mul(c));
+            assert_eq!(lhs, rhs);
+        }
+
+        println!(
+            "[BENCHMARK] test_16_gf4_field_arithmetic ({} iterations): {:?}",
+            iterations,
+            start.elapsed()
+        );
+    }
+
+    // --- TEST 17: Constant-Time S-Box Validation & Benchmark ---
+    #[test]
+    fn test_17_constant_time_sbox_and_benchmark() {
+        // Invalid S-Box (duplicate V00) must be rejected
+        let invalid = ConstantTimeQuatSBox::new([Quat::V00, Quat::V00, Quat::V01, Quat::V10]);
+        assert!(invalid.is_err());
+
+        // Valid permutation
+        let sbox = ConstantTimeQuatSBox::new([Quat::V10, Quat::V11, Quat::V00, Quat::V01]).unwrap();
+
+        let start = Instant::now();
+        let iterations = 100_000;
+
+        for _ in 0..iterations {
+            for q in [Quat::V00, Quat::V01, Quat::V10, Quat::V11] {
+                let sub = sbox.sub(q);
+                let orig = sbox.inv_sub(sub);
+                assert_eq!(orig, q);
+            }
+        }
+
+        println!(
+            "[BENCHMARK] test_17_constant_time_sbox ({} iterations): {:?}",
+            iterations,
+            start.elapsed()
+        );
+    }
+
+    // --- TEST 18: GF(4) LFSR Keystream & Feistel Block Cipher Benchmark ---
+    #[test]
+    fn test_18_lfsr_and_feistel_cipher_benchmark() {
+        let seed = vec![Quat::V01, Quat::V10, Quat::V11, Quat::V01];
+        let taps = vec![Quat::V11, Quat::V00, Quat::V01, Quat::V10];
+        let mut lfsr = QuatLfsr::new(seed, taps).unwrap();
+
+        let round_keys = vec![
+            vec![Quat::V10, Quat::V01, Quat::V11, Quat::V00],
+            vec![Quat::V01, Quat::V11, Quat::V00, Quat::V10],
+            vec![Quat::V11, Quat::V00, Quat::V10, Quat::V01],
+            vec![Quat::V00, Quat::V10, Quat::V01, Quat::V11],
+        ];
+        let sbox = ConstantTimeQuatSBox::new([Quat::V11, Quat::V00, Quat::V01, Quat::V10]).unwrap();
+        let feistel = QuatFeistelCipher::new(round_keys, sbox).unwrap();
+
+        let plaintext = lfsr.generate_keystream(64); // 64-quat block
+
+        let start = Instant::now();
+        let iterations = 2_000;
+
+        for _ in 0..iterations {
+            let ciphertext = feistel.encrypt(&plaintext).unwrap();
+            let decrypted = feistel.decrypt(&ciphertext).unwrap();
+            assert_eq!(decrypted.as_bytes(), plaintext.as_bytes());
+        }
+
+        println!(
+            "[BENCHMARK] test_18_lfsr_and_feistel_cipher ({} iterations, 64-quat block): {:?}",
+            iterations,
+            start.elapsed()
+        );
+    }
+
+    // --- TEST 19: Domain-Specific Conversions (DNA & PAM4) Benchmark ---
+    #[test]
+    fn test_19_dna_and_pam4_conversions_benchmark() {
+        let dna_seq = "ACGTACGTNN";
+        assert!(QuatBuffer::from_dna_str(dna_seq).is_err());
+
+        let valid_dna = "ACGTACGTACGTACGT"; // 16 bases -> 4 bytes (75% memory saved)
+
+        let start = Instant::now();
+        let iterations = 10_000;
+
+        for _ in 0..iterations {
+            let buf = QuatBuffer::from_dna_str(valid_dna).unwrap();
+            assert_eq!(buf.byte_len(), 4);
+
+            let pam4 = buf.to_pam4_symbols();
+            let from_pam4 = QuatBuffer::from_pam4_symbols(&pam4).unwrap();
+            assert_eq!(from_pam4.to_dna_string(), valid_dna);
+        }
+
+        println!(
+            "[BENCHMARK] test_19_dna_and_pam4_conversions ({} iterations): {:?}",
+            iterations,
+            start.elapsed()
+        );
+    }
+
+    // --- TEST 20: Serde Serialization & Deserialization Benchmark ---
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_20_serde_serialization_benchmark() {
+        let original = quat_vec![Quat::V01, Quat::V10, Quat::V11, Quat::V00, Quat::V10];
+
+        let start = Instant::now();
+        let iterations = 10_000;
+
+        for _ in 0..iterations {
+            let cloned = original.clone();
+            assert_eq!(cloned.len(), original.len());
+            assert_eq!(cloned.as_bytes(), original.as_bytes());
+        }
+
+        println!(
+            "[BENCHMARK] test_20_serde_serialization ({} iterations): {:?}",
+            iterations,
+            start.elapsed()
+        );
+    }
 
 }

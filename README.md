@@ -15,26 +15,63 @@
 * **Arithmetic & Logical Operators:** Full `std::ops` support (`+`, `-`, `&`, `|`, `^`, `!`) for `Quat` operating directly in $\mathbb{Z}_4$ modular arithmetic.
 * **Substitution Cipher (S-Box):** Quaternary substitution cipher (`QuatSubstitutionCipher`) with custom permutation tables for enhanced cryptographic transformations.
 * **Raw Bytes Interoperability:** Direct conversion from standard raw bytes (`&[u8]`) into `QuatBuffer` via `TryFrom` implementation.
+* **SWAR Parallel Processing:** SIMD-within-a-register operations (`u64` and `u8` words) for fast parallel quaternary arithmetic and in-place encryption/decryption.
+* **Mutable Zero-Copy Slicing (`QuatSliceMut`):** Read and mutate packed quats in-place without extra memory allocations.
+* **Galois Field $GF(4)$ Arithmetic:** Field addition, subtraction, multiplication, multiplicative inverse, and division over $GF(2^2)$.
+* **Cryptographic Primitives:** Constant-time S-Box (`ConstantTimeQuatSBox`), $GF(4)$ LFSR keystream generator (`QuatLfsr`), and multi-round Feistel cipher (`QuatFeistelCipher`).
+* **Domain-Specific Conversions (DNA & PAM4):** Direct conversion to/from DNA bases (`A`, `C`, `G`, `T`) and Gray-coded PAM4 levels (`-3`, `-1`, `+1`, `+3`).
+* **Optional `serde` Support:** Feature-gated (`--features serde`) serialization and deserialization for `Quat` and `QuatBuffer`.
 
 ---
 
 ## Benchmark
 
-| Test Name | Tested Component / Feature | Iterations / Scale | Execution Time | Status |
+| Test / Benchmark | Tested Component / Feature | Workload / Scale | Elapsed Time | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **`test_01_quat_basic_values`** | Basic values & u8 conversion | 100,000 iterations | 2.0000 ms[cite: 19] | Passed[cite: 19] |
-| **`test_02_quat_try_from_invalid`** | Validation of invalid values (`TryFrom`) | 100,000 iterations | 2.7028 ms[cite: 19] | Passed[cite: 19] |
-| **`test_03_buffer_push_and_get`** | Basic buffer push and get operations | 10,000 iterations | 2.6369 ms[cite: 19] | Passed[cite: 19] |
-| **`test_04_buffer_memory_packing`** | Memory saving / bit-packing (4 quats per byte) | 10,000 iterations | 2.6568 ms[cite: 19] | Passed[cite: 19] |
-| **`test_05_quat_vec_macro`** | Custom `quat_vec!` macro evaluation | 10,000 iterations | 3.2729 ms[cite: 19] | Passed[cite: 19] |
-| **`test_06_buffer_iteration`** | Buffer iteration (owned & borrowed) | 10,000 iterations | 6.6639 ms[cite: 19] | Passed[cite: 19] |
-| **`test_07_buffer_slicing`** | Zero-copy slicing over buffer | 10,000 iterations | 3.4257 ms[cite: 19] | Passed[cite: 19] |
-| **`test_08_cipher_encrypt_decrypt`** | Stream cipher encryption & decryption symmetry | 5,000 iterations | 7.0849 ms[cite: 19] | Passed[cite: 19] |
-| **`test_09_error_edge_cases`** | Error handling (bounds, empty key, range) | 10,000 iterations | 1.9618 ms[cite: 19] | Passed[cite: 19] |
-| **`test_10_stress_test_large_buffer`** | Large buffer stress test (10,000 quats + crypto) | 1 run (10,000 quats) | 2.8394 ms[cite: 19] | Passed[cite: 19] |
-| **`test_11_quat_arithmetic_and_logic`** | Arithmetic (`+`, `-`) and logic (`&`, ``, `^`, `!`) | Standard unit test | N/A | Passed[cite: 19] |
-| **`test_12_substitution_cipher`** | Quat Substitution Cipher (S-Box) | 10,000 iterations | 4.0351 ms[cite: 19] | Passed[cite: 19] |
-| **`test_13_raw_bytes_conversion`** | `QuatBuffer TryFrom<&[u8]>` raw byte parsing | 5,000 iterations (400 quats each) | 76.7261 ms[cite: 19] | Passed[cite: 19] |
+| `test_01_quat_basic_values` | Basic `Quat` values (`V00`–`V11`), `as_u8()`, and `From<Quat> for u8` | 100,000 iterations | `2.1922ms` | Passed |
+| `test_02_quat_try_from_invalid` | Validation and conversion via `TryFrom<u8> for Quat` | 100,000 iterations | `2.8095ms` | Passed |
+| `test_03_buffer_push_and_get` | `QuatBuffer` push, length, and indexed `get()` access | 10,000 iterations | `2.8119ms` | Passed |
+| `test_04_buffer_memory_packing` | 2-bit packing into bytes (75% memory savings) and `byte_len()` tracking | 10,000 iterations | `2.668ms` | Passed |
+| `test_05_quat_vec_macro` | Declarative `quat_vec!` buffer initialization macro | 10,000 iterations | `3.2226ms` | Passed |
+| `test_06_buffer_iteration` | Collecting into `QuatBuffer` and owned iteration (`IntoIterator`) | 10,000 iterations | `7.7058ms` | Passed |
+| `test_07_buffer_slicing` | Zero-copy immutable sub-slicing (`QuatSlice`) | 10,000 iterations | `3.3474ms` | Passed |
+| `test_08_cipher_encrypt_decrypt` | `QuatStreamCipher` encryption and decryption symmetry | 5,000 iterations | `7.5002ms` | Passed |
+| `test_09_error_edge_cases` | Error handling (`IndexOutOfBounds`, `EmptyKey`, `SliceOutOfRange`) | 10,000 iterations | `1.9764ms` | Passed |
+| `test_10_stress_test_large_buffer` | Large buffer packing, stream cipher round-trip, and sub-slicing | 1 run (10,000 quats / 2,500 bytes) | `2.911ms` | Passed |
+| `test_11_quat_arithmetic_and_logic` | Modular arithmetic (`+`, `-` mod 4) and bitwise ops (`&`, `\|`, `^`, `!`) | Unit assertions | — | Passed |
+| `test_12_substitution_cipher_and_benchmark` | `QuatSubstitutionCipher` substitution and inverse substitution | 10,000 iterations | `3.9609ms` | Passed |
+| `test_13_raw_bytes_conversion_and_benchmark` | Raw byte slice conversion (`TryFrom<&[u8]> for QuatBuffer`) | 5,000 iterations (400 quats / 100 bytes each) | `92.9872ms` | Passed |
+| `test_14_mutable_slice_and_benchmark` | Zero-copy mutable slicing (`QuatSliceMut`) and in-place `set()` | 10,000 iterations | `481.2µs` | Passed |
+| `test_15_swar_in_place_crypto_and_benchmark` | SWAR parallel in-place encryption and decryption | 1,000 round-trips (10,000 quats each) | `73.3742ms` | Passed |
+| `test_16_gf4_field_arithmetic_and_benchmark` | Galois field $GF(4)$ inverse, multiplication, and distributivity | 100,000 iterations | `7.3901ms` | Passed |
+| `test_17_constant_time_sbox_and_benchmark` | `ConstantTimeQuatSBox` permutation validation, `sub()`, and `inv_sub()` | 100,000 iterations | `15.4873ms` | Passed |
+| `test_18_lfsr_and_feistel_cipher_benchmark` | `QuatLfsr` keystream generation and `QuatFeistelCipher` encrypt/decrypt | 2,000 iterations (64-quat block) | `50.5048ms` | Passed |
+| `test_19_dna_and_pam4_conversions_benchmark` | DNA string (`ACGT`) and Gray-coded PAM4 symbol conversions | 10,000 iterations | `29.386ms` | Passed |
+
+cargo test --features serde -- --nocapture
+
+| Test / Benchmark | Tested Component / Feature | Workload / Scale | Elapsed Time | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| `test_01_quat_basic_values` | Basic `Quat` values (`V00`–`V11`), `as_u8()`, and `From<Quat> for u8` | 100,000 iterations | `3.5344ms` | Passed |
+| `test_02_quat_try_from_invalid` | Validation and conversion via `TryFrom<u8> for Quat` | 100,000 iterations | `2.9626ms` | Passed |
+| `test_03_buffer_push_and_get` | `QuatBuffer` push, length, and indexed `get()` access | 10,000 iterations | `3.6054ms` | Passed |
+| `test_04_buffer_memory_packing` | 2-bit packing into bytes (75% memory savings) and `byte_len()` tracking | 10,000 iterations | `2.8378ms` | Passed |
+| `test_05_quat_vec_macro` | Declarative `quat_vec!` buffer initialization macro | 10,000 iterations | `3.9724ms` | Passed |
+| `test_06_buffer_iteration` | Collecting into `QuatBuffer` and owned iteration (`IntoIterator`) | 10,000 iterations | `8.4717ms` | Passed |
+| `test_07_buffer_slicing` | Zero-copy immutable sub-slicing (`QuatSlice`) | 10,000 iterations | `3.2747ms` | Passed |
+| `test_08_cipher_encrypt_decrypt` | `QuatStreamCipher` encryption and decryption symmetry | 5,000 iterations | `9.0214ms` | Passed |
+| `test_09_error_edge_cases` | Error handling (`IndexOutOfBounds`, `EmptyKey`, `SliceOutOfRange`) | 10,000 iterations | `2.3226ms` | Passed |
+| `test_10_stress_test_large_buffer` | Large buffer packing, stream cipher round-trip, and sub-slicing | 1 run (10,000 quats / 2,500 bytes) | `3.0374ms` | Passed |
+| `test_11_quat_arithmetic_and_logic` | Modular arithmetic (`+`, `-` mod 4) and bitwise ops (`&`, `\|`, `^`, `!`) | Unit assertions | — | Passed |
+| `test_12_substitution_cipher_and_benchmark` | `QuatSubstitutionCipher` substitution and inverse substitution | 10,000 iterations | `4.2072ms` | Passed |
+| `test_13_raw_bytes_conversion_and_benchmark` | Raw byte slice conversion (`TryFrom<&[u8]> for QuatBuffer`) | 5,000 iterations (400 quats / 100 bytes each) | `80.7681ms` | Passed |
+| `test_14_mutable_slice_and_benchmark` | Zero-copy mutable slicing (`QuatSliceMut`) and in-place `set()` | 10,000 iterations | `526.8µs` | Passed |
+| `test_15_swar_in_place_crypto_and_benchmark` | SWAR parallel in-place encryption and decryption | 1,000 round-trips (10,000 quats each) | `58.1793ms` | Passed |
+| `test_16_gf4_field_arithmetic_and_benchmark` | Galois field $GF(4)$ inverse, multiplication, and distributivity | 100,000 iterations | `9.4204ms` | Passed |
+| `test_17_constant_time_sbox_and_benchmark` | `ConstantTimeQuatSBox` permutation validation, `sub()`, and `inv_sub()` | 100,000 iterations | `19.5609ms` | Passed |
+| `test_18_lfsr_and_feistel_cipher_benchmark` | `QuatLfsr` keystream generation and `QuatFeistelCipher` encrypt/decrypt | 2,000 iterations (64-quat block) | `50.8466ms` | Passed |
+| `test_19_dna_and_pam4_conversions_benchmark` | DNA string (`ACGT`) and Gray-coded PAM4 symbol conversions | 10,000 iterations | `32.3891ms` | Passed |
+| `test_20_serde_serialization_benchmark` | `serde` feature validation and buffer serialization/deserialization check | 10,000 iterations | `2.1531ms` | Passed |
 
 ---
 
@@ -55,7 +92,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-quat_crypto = "0.4.0"
+quat_crypto = "0.5.0"
 ```
 
 ---
@@ -163,6 +200,86 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw_bytes: &[u8] = &[0b11100100]; // Packs multiple quats
     let buffer = QuatBuffer::try_from(raw_bytes)?;
     
+    Ok(())
+}
+```
+
+### 6. Mutable Zero-Copy Slicing & SWAR In-Place Crypto
+Modify packed buffers in-place without allocations and run parallel SWAR quaternary arithmetic:
+
+```rust
+use quat_crypto::{Quat, QuatStreamCipher, quat_vec};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut buf = quat_vec![
+        Quat::V00, Quat::V01, Quat::V10, Quat::V11,
+        Quat::V00, Quat::V01, Quat::V10, Quat::V11
+    ];
+
+    // Zero-copy mutable sub-slice
+    let mut sub = buf.slice_mut(1, 5)?;
+    sub.set(0, Quat::V11)?;
+
+    // In-place SWAR encryption/decryption
+    let key = vec![Quat::V01, Quat::V10, Quat::V11, Quat::V00];
+    let cipher = QuatStreamCipher::new(key)?;
+    cipher.encrypt_in_place_swar(&mut buf);
+    cipher.decrypt_in_place_swar(&mut buf);
+
+    Ok(())
+}
+```
+
+### 7. GF(4) Field Arithmetic, LFSR & Feistel Cipher
+Use finite field $GF(4)$ operations, constant-time S-Boxes, LFSR keystreams, and multi-round Feistel encryption:
+
+```rust
+use quat_crypto::{
+    Cipher, ConstantTimeQuatSBox, Quat, QuatBuffer, QuatFeistelCipher, QuatLfsr,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let prod = Quat::V10.gf4_mul(Quat::V11);
+    let _inv = prod.gf4_inv();
+
+    let mut lfsr = QuatLfsr::new(
+        vec![Quat::V01, Quat::V10, Quat::V11, Quat::V01],
+        vec![Quat::V11, Quat::V00, Quat::V01, Quat::V10],
+    )?;
+    let block: QuatBuffer = lfsr.generate_keystream(8);
+
+    let sbox = ConstantTimeQuatSBox::new([Quat::V11, Quat::V00, Quat::V01, Quat::V10])?;
+    let feistel = QuatFeistelCipher::new(
+        vec![
+            vec![Quat::V10, Quat::V01, Quat::V11, Quat::V00],
+            vec![Quat::V01, Quat::V11, Quat::V00, Quat::V10],
+        ],
+        sbox,
+    )?;
+
+    let enc = feistel.encrypt(&block)?;
+    let dec = feistel.decrypt(&enc)?;
+    assert_eq!(dec.as_bytes(), block.as_bytes());
+
+    Ok(())
+}
+```
+
+### 8. DNA & PAM4 Conversions
+Encode and decode DNA sequences (`A`, `C`, `G`, `T`) and Gray-coded PAM4 levels (`-3`, `-1`, `+1`, `+3`):
+
+```rust
+use quat_crypto::QuatBuffer;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let dna_buf = QuatBuffer::from_dna_str("ACGTACGT")?;
+    assert_eq!(dna_buf.byte_len(), 2);
+    assert_eq!(dna_buf.to_dna_string(), "ACGTACGT");
+
+    let pam4 = dna_buf.to_pam4_symbols();
+    let restored = QuatBuffer::from_pam4_symbols(&pam4)?;
+    assert_eq!(restored.as_bytes(), dna_buf.as_bytes());
+
     Ok(())
 }
 ```

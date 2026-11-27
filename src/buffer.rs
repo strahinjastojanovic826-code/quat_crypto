@@ -2,6 +2,10 @@ use crate::quat::Quat;
 use crate::error::QuatError;
 use crate::slice::QuatSlice;
 use std::convert::TryInto;
+use crate::slice::QuatSliceMut;
+
+#[cfg(feature = "serde")]
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Clone)]
 pub struct QuatBuffer {
@@ -73,6 +77,71 @@ impl QuatBuffer {
     pub fn byte_len(&self) -> usize {
         self.bytes.len()
     }
+
+    /// Encodes a DNA sequence string (e.g., "ACGT") into a packed `QuatBuffer`.
+    pub fn from_dna_str(dna: &str) -> Result<Self, QuatError> {
+        let mut buffer = Self::with_capacity(dna.len());
+        for &byte in dna.as_bytes() {
+            let quat = Quat::from_dna_base(byte)?;
+            buffer.push(quat);
+        }
+        Ok(buffer)
+    }
+
+    /// Decodes the packed `QuatBuffer` into a DNA sequence `String`.
+    pub fn to_dna_string(&self) -> String {
+        let mut out = String::with_capacity(self.len);
+        for quat in self.as_slice().iter() {
+            out.push(quat.to_dna_base());
+        }
+        out
+    }
+
+    /// Modulates the `QuatBuffer` into a vector of Gray-coded PAM4 symbol levels (`-3, -1, +1, +3`).
+    pub fn to_pam4_symbols(&self) -> Vec<i8> {
+        self.as_slice().iter().map(|q| q.to_pam4_level()).collect()
+    }
+
+    /// Demodulates a slice of PAM4 levels (`-3, -1, +1, +3`) into a packed `QuatBuffer`.
+    pub fn from_pam4_symbols(symbols: &[i8]) -> Result<Self, QuatError> {
+        let mut buffer = Self::with_capacity(symbols.len());
+        for &lvl in symbols {
+            buffer.push(Quat::from_pam4_level(lvl)?);
+        }
+        Ok(buffer)
+    }
+
+    /// Returns a mutable zero-copy view over the entire buffer.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> QuatSliceMut<'_> {
+        QuatSliceMut::new(&mut self.bytes, 0, self.len)
+    }
+
+    /// Returns a mutable sub-slice view in range `start..end`.
+    pub fn slice_mut(&mut self, start: usize, end: usize) -> Result<QuatSliceMut<'_>, QuatError> {
+        if start > end || end > self.len {
+            return Err(QuatError::SliceOutOfRange {
+                start,
+                end,
+                len: self.len,
+            });
+        }
+        Ok(QuatSliceMut::new(&mut self.bytes, start, end - start))
+    }
+
+    /// Provides direct read access to the underlying packed bytes.
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Provides direct mutable access to the underlying packed bytes.
+    /// Note: Modifying padding bits beyond `self.len` is safe, as `len` bounds logical access.
+    #[inline]
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes
+    }
+
 }
 
 impl Default for QuatBuffer {
@@ -164,5 +233,67 @@ impl TryFrom<&[u8]> for QuatBuffer {
             }
         }
         Ok(buffer)
+    }
+}
+
+//Serde Serialization & Deserialization 
+#[cfg(feature = "serde")]
+#[derive(Serialize, Deserialize)]
+struct QuatBufferWire<'a> {
+    /// Exact number of 2-bit quats stored in the buffer.
+    len: usize,
+    /// Packed bytes containing 4 quats per byte (75% memory reduction preserved).
+    #[serde(borrow)]
+    bytes: std::borrow::Cow<'a, [u8]>,
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for QuatBuffer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = QuatBufferWire {
+            len: self.len,
+            bytes: std::borrow::Cow::Borrowed(&self.bytes),
+        };
+        wire.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for QuatBuffer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = QuatBufferWire::deserialize(deserializer)?;
+        let expected_bytes = (wire.len + 3) / 4;
+
+        if wire.bytes.len() != expected_bytes {
+            return Err(de::Error::custom(format!(
+                "corrupted QuatBuffer payload: expected {} packed bytes for {} quats, got {} bytes",
+                expected_bytes,
+                wire.len,
+                wire.bytes.len()
+            )));
+        }
+
+        let mut bytes = wire.bytes.into_owned();
+
+        // Sanitize unused trailing padding bits in the last byte to maintain canonical representation
+        let remainder_quats = wire.len % 4;
+        if remainder_quats != 0 {
+            if let Some(last_byte) = bytes.last_mut() {
+                let valid_bits = remainder_quats * 2;
+                let mask = !((1u8 << (8 - valid_bits)) - 1);
+                *last_byte &= mask;
+            }
+        }
+
+        Ok(Self {
+            bytes,
+            len: wire.len,
+        })
     }
 }
